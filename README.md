@@ -43,7 +43,7 @@ Clojure buffer commands:
 * **C-c M-m**: Invoke clojure.walk/macroexpand-all on the form preceding point and display result in a macroexpansion buffer. If invoked with a prefix argument, pprint the result.
 * **C-c M-n**: Switch the namespace of the repl buffer to the namespace of the current buffer.
 * **C-c C-z**: Select the repl buffer.
-* **C-c C-k**: Load the current buffer.
+* **C-c C-k**: Load the current buffer. With a prefix arg, forces a full reload.
 * **C-c C-l**: Load a file.
 * **M-.**: Jump to the definition of a var.
 * **M-,**: Return to your pre-jump location.

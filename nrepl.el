@@ -1085,28 +1085,48 @@ the buffer should appear."
   (let ((form (format "(with-out-str (clojure.repl/doc %s))" (symbol-at-point))))
     (nrepl-send-string form (nrepl-current-ns) 'nrepl-doc-handler)))
 
-;; TODO: implement reloading ns
-(defun nrepl-load-file (filename)
-   "Load the clojure file FILENAME."
+(defun nrepl-load-file-form (filename reload namespace)
+  ;; implicit quoting on elisp vectors can suuuuuuuuuuuuuuuuuuuuuuuuuuuuuuck it!
+  (if reload
+      (let ((v [libs-ref (deref (resolve 'clojure.core/*loaded-libs*))
+                     libs (deref libs-ref) ns nil]))
+    (aset v 5 (list 'quote namespace))
+    `(let ,v
+       (when ns
+         (doseq [sym (keys (ns-refers ns))]
+                (ns-unmap ns sym))
+         (doseq [a (keys (ns-aliases ns))]
+                (ns-unalias ns a))
+         (doseq [a (keys (ns-publics ns))]
+                (ns-unmap ns a)))
+       (try (dosync (ref-set libs-ref (hash-set)))
+            (clojure.core/load-file ,filename)
+            (finally (dosync (ref-set libs-ref libs))))))
+    `(clojure.core/load-file ,filename)))
+
+(defun nrepl-load-file (filename &optional reload)
+  "Load the clojure file FILENAME."
    (interactive (list
                  (read-file-name "Load file: " nil nil
                                  nil (if (buffer-file-name)
                                          (file-name-nondirectory
                                           (buffer-file-name))))))
-   (let ((fn (convert-standard-filename (expand-file-name filename))))
-     (nrepl-interactive-eval (format "(clojure.core/load-file \"%s\")\n" fn))
-     (message "Loading %s..." fn)))
+   (let ((f (convert-standard-filename (expand-file-name filename))))
+     (setq fff (pp (nrepl-load-file-form f reload (nrepl-current-ns))))
+     (nrepl-interactive-eval
+      (pp (nrepl-load-file-form f reload (nrepl-current-ns))))
+     (message "Loading %s..." f)))
 
-(defun nrepl-load-current-buffer ()
-   "Load current buffer's file."
-   (interactive)
+(defun nrepl-load-current-buffer (reload)
+   "Load current buffer's file. Force reload with prefix arg."
+   (interactive "P")
    (check-parens)
    (unless buffer-file-name
      (error "Buffer %s is not associated with a file." (buffer-name)))
    (when (and (buffer-modified-p)
               (y-or-n-p (format "Save file %s? " (buffer-file-name))))
      (save-buffer))
-   (nrepl-load-file (buffer-file-name)))
+   (nrepl-load-file (buffer-file-name) reload))
 
 ;;; server
 (defun nrepl-server-filter (process output)
@@ -1119,6 +1139,7 @@ the buffer should appear."
 
 (defun nrepl-server-sentinel (process event)
   (let ((debug-on-error t))
+    ;; TODO: don't display this error if the nrepl server is started then killed
     (error "Could not start nREPL server: %s"
            (let ((b (process-buffer process)))
              (if (and b (buffer-live-p b))
