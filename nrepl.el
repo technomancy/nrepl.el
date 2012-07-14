@@ -1085,24 +1085,33 @@ the buffer should appear."
   (let ((form (format "(with-out-str (clojure.repl/doc %s))" (symbol-at-point))))
     (nrepl-send-string form (nrepl-current-ns) 'nrepl-doc-handler)))
 
+;; only works with %s on the top level, but it makes vectors suck a bit less
+(defun nrepl-format-vector (v &rest args)
+  (let ((v (copy-seq v))
+        (args (copy-seq args)))
+    (dotimes (n (length v) v)
+      (let ((elt (aref v n)))
+        (when (and (listp elt)))
+        (when (equal (intern "%s") elt)
+          (aset v n (pop args)))))))
+
 (defun nrepl-load-file-form (filename reload namespace)
-  ;; implicit quoting on elisp vectors can suuuuuuuuuuuuuuuuuuuuuuuuuuuuuuck it!
   (if reload
-      (let ((v [libs-ref (deref (resolve 'clojure.core/*loaded-libs*))
-                     libs (deref libs-ref) ns nil]))
-    (aset v 5 (list 'quote namespace))
-    `(let ,v
-       (when ns
-         (doseq [sym (keys (ns-refers ns))]
-                (ns-unmap ns sym))
-         (doseq [a (keys (ns-aliases ns))]
-                (ns-unalias ns a))
-         (doseq [a (keys (ns-publics ns))]
-                (ns-unmap ns a)))
-       (try (dosync (ref-set libs-ref (hash-set)))
-            (clojure.core/load-file ,filename)
-            (finally (dosync (ref-set libs-ref libs))))))
-    `(clojure.core/load-file ,filename)))
+      `(let ,(nrepl-format-vector
+              [libs-ref (deref (resolve (symbol "clojure.core"
+                                                "*loaded-libs*")))
+                        libs (deref libs-ref) n %s ns (symbol n)] namespace)
+         (when ns
+           (doseq [sym (keys (ns-refers ns))]
+                  (ns-unmap ns sym))
+           (doseq [a (keys (ns-aliases ns))]
+                  (ns-unalias ns a))
+           (doseq [a (keys (ns-publics ns))]
+                  (ns-unmap ns a)))
+         (try (dosync (ref-set libs-ref (hash-set)))
+              (load-file ,filename)
+              (finally (dosync (ref-set libs-ref libs)))))
+    `(load-file ,filename)))
 
 (defun nrepl-load-file (filename &optional reload)
   "Load the clojure file FILENAME."
