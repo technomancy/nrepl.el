@@ -1085,22 +1085,12 @@ the buffer should appear."
   (let ((form (format "(with-out-str (clojure.repl/doc %s))" (symbol-at-point))))
     (nrepl-send-string form (nrepl-current-ns) 'nrepl-doc-handler)))
 
-;; only works with %s on the top level, but it makes vectors suck a bit less
-(defun nrepl-format-vector (v &rest args)
-  (let ((v (copy-seq v))
-        (args (copy-seq args)))
-    (dotimes (n (length v) v)
-      (let ((elt (aref v n)))
-        (when (and (listp elt)))
-        (when (equal (intern "%s") elt)
-          (aset v n (pop args)))))))
-
 (defun nrepl-load-file-form (filename reload namespace)
   (if reload
-      `(let ,(nrepl-format-vector
-              [libs-ref (deref (resolve (symbol "clojure.core"
-                                                "*loaded-libs*")))
-                        libs (deref libs-ref) n %s ns (symbol n)] namespace)
+      `(let ,(coerce `(libs-ref (deref (resolve (symbol "clojure.core"
+                                                        "*loaded-libs*")))
+                                libs (deref libs-ref) ns (symbol ,namespace))
+                     'vector)
          (when ns
            (doseq [sym (keys (ns-refers ns))]
                   (ns-unmap ns sym))
@@ -1109,9 +1099,10 @@ the buffer should appear."
            (doseq [a (keys (ns-publics ns))]
                   (ns-unmap ns a)))
          (try (dosync (ref-set libs-ref (hash-set)))
-              (load-file ,filename)
+              ;; this still really chews
+              ((resolve (symbol "clojure.core/load-file")) ,filename)
               (finally (dosync (ref-set libs-ref libs)))))
-    `(load-file ,filename)))
+    `((resolve (symbol "clojure.core/load-file")) ,filename)))
 
 (defun nrepl-load-file (filename &optional reload)
   "Load the clojure file FILENAME."
@@ -1121,7 +1112,6 @@ the buffer should appear."
                                          (file-name-nondirectory
                                           (buffer-file-name))))))
    (let ((f (convert-standard-filename (expand-file-name filename))))
-     (setq fff (pp (nrepl-load-file-form f reload (nrepl-current-ns))))
      (nrepl-interactive-eval
       (pp (nrepl-load-file-form f reload (nrepl-current-ns))))
      (message "Loading %s..." f)))
