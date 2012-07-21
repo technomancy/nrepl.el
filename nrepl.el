@@ -303,10 +303,7 @@ Empty strings and duplicates are ignored."
   (nrepl-make-response-handler buffer
                                (lambda (buffer value)
                                  (nrepl-jump-to-def-for
-                                  (car (read-from-string value))))
-                               (lambda (buffer out) (message out))
-                               (lambda (buffer err) (message err))
-                               (lambda (buffer))))
+                                  (car (read-from-string value))))))
 
 (defun nrepl-jump-to-def (var)
   "Jump to the definition of the var at point."
@@ -360,7 +357,8 @@ Empty strings and duplicates are ignored."
 
 (put 'nrepl-dbind-response 'lisp-indent-function 2)
 
-(defun nrepl-make-response-handler (buffer value-handler stdout-handler stderr-handler done-handler)
+(defun nrepl-make-response-handler (buffer &optional value-handler stdout-handler
+                                           stderr-handler done-handler)
   (lexical-let ((buffer buffer)
                 (value-handler value-handler)
                 (stdout-handler stdout-handler)
@@ -379,7 +377,8 @@ Empty strings and duplicates are ignored."
                    (funcall stdout-handler buffer out)))
               (err
                (if stderr-handler
-                   (funcall stderr-handler buffer err)))
+                   (funcall stderr-handler buffer err)
+                 (nrepl-err-handler buffer err)))
               (status
                (if (member "interrupted" status)
                    (message "Evaluation interrupted."))
@@ -399,42 +398,36 @@ Empty strings and duplicates are ignored."
                                (lambda (buffer)
                                  (nrepl-emit-prompt buffer))))
 
+(defun nrepl-err-handler (buffer value)
+  ;; TODO: use pst+ here for colorization. currently breaks bencode.
+  (nrepl-send-string "(if-let [pst+ (resolve 'clj-stacktrace.repl/pst)]
+                        (pst+ *e) (clojure.stacktrace/print-stack-trace *e))"
+                     "user" (nrepl-make-response-handler
+                             (nrepl-popup-buffer "*nREPL error*" t)
+                             nil 'nrepl-emit-into-color-buffer)))
+
 (defun nrepl-interactive-eval-handler (buffer)
   (nrepl-make-response-handler buffer
+                               ;; TODO: should be able to just use message here
                                (lambda (buffer value)
-                                 (message (format "%s" value)))
-                               '()
-                               (lambda (buffer err)
-                                 (message (format "%s" err)))
-                               '()))
+                                 (message (format "%s" value)))))
 
 (defun nrepl-interactive-eval-print-handler (buffer)
   (nrepl-make-response-handler buffer
                                (lambda (buffer value)
                                  (with-current-buffer buffer
-                                   (insert (format "%s" value))))
-                               '()
-                               (lambda (buffer err)
-                                 (message (format "%s" err)))
-                               '()))
+                                   (insert (format "%s" value))))))
 
 (defun nrepl-popup-eval-print-handler (buffer)
   (nrepl-make-response-handler buffer
                                (lambda (buffer str)
-                                 (nrepl-emit-into-popup-buffer buffer str))
-                               '()
-                               (lambda (buffer str)
-                                 (nrepl-emit-into-popup-buffer buffer str))
-                               '()))
+                                 (nrepl-emit-into-popup-buffer buffer str))))
 
 (defun nrepl-popup-eval-out-handler (buffer)
   (nrepl-make-response-handler buffer
                                '()
                                (lambda (buffer str)
-                                 (nrepl-emit-into-popup-buffer buffer str))
-                               (lambda (buffer str)
-                                 (nrepl-emit-into-popup-buffer buffer str))
-                               '()))
+                                 (nrepl-emit-into-popup-buffer buffer str))))
 
 ;;;; Popup buffers
 (defvar nrepl-popup-restore-data nil
@@ -528,6 +521,15 @@ Empty strings and duplicates are ignored."
       (insert (format "%s" value))
       (indent-sexp)
       (font-lock-fontify-buffer))))
+
+(defun nrepl-emit-into-color-buffer (buffer value)
+  (with-current-buffer buffer
+    (let ((inhibit-read-only t)
+          (buffer-undo-list t))
+      (insert (format "%s" value))
+      (ansi-color-apply-on-region (point-min) (point-max)))
+    (goto-char (point-min))))
+
 
 
 ;;;; Macroexpansion
