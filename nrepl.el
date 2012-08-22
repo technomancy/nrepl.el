@@ -1314,9 +1314,13 @@ under point, prompts for a var."
                                  nil (if (buffer-file-name)
                                          (file-name-nondirectory
                                           (buffer-file-name))))))
-   (let ((fn (convert-standard-filename (expand-file-name filename))))
-     (nrepl-interactive-eval (format "(clojure.core/load-file \"%s\")\n" fn))
+   (let ((fn (replace-regexp-in-string
+        "\\\\" "\\\\\\\\"
+	      (convert-standard-filename (expand-file-name filename)))))
+     (nrepl-interactive-eval
+      (format "(clojure.core/load-file \"%s\")\n(in-ns '%s)\n" fn (nrepl-current-ns)))
      (message "Loading %s..." fn)))
+
 
 (defun nrepl-load-current-buffer ()
    "Load current buffer's file."
